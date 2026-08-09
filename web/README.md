@@ -1,36 +1,73 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Materi Sekolah Agent — Web App
 
-## Getting Started
+Sistem simpan materi sekolah (PDF/foto/teks/link YouTube) per mata pelajaran & bab di **Google Drive**, plus chat agent AI (Gemini) untuk belajar: rangkuman, quiz, tanya jawab dengan web-search fallback (grounding).
 
-First, run the development server:
+## Fitur
+
+- 📤 Upload materi: PDF, gambar (OCR via Gemini), teks, link YouTube
+- 📂 Browse struktur Drive: `MateriSekolah/<Mapel>/<Bab>/`
+- 💬 Chat agent dengan **session system**: list, lanjut, rename, pin, cari, export (.md), hapus
+- 🧠 Gemini grounding: jawab dari materi dulu, kalau kurang → cari web otomatis, sumber ditandai `[Dari materi]` vs `[Dari web]`
+- 🔒 Private, tanpa login
+
+## Setup
+
+1. **Prasyarat**: Node.js 20+.
+
+2. **Google Cloud** (sekali):
+   - Enable **Google Drive API** di https://console.cloud.google.com/apis/library
+   - Buat Service Account (IAM & Admin → Service Accounts) → buat key JSON → download.
+   - (Opsional: bagikan folder Drive ke email service account jika pakai Drive pribadi.)
+
+3. **Gemini API key**: https://aistudio.google.com/apikey
+
+4. **Env**: `cp .env.example .env`, isi `GOOGLE_SERVICE_ACCOUNT` (path JSON) & `GEMINI_API_KEY`.
+
+5. **Jalankan**:
+   ```bash
+   npm ci
+   npm run dev        # development (http://localhost:3000)
+   # atau production:
+   npm run build && npm run start
+   ```
+
+## Deploy ke Linux Ubuntu
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# di server
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs build-essential
+git clone <repo-url> && cd web
+npm ci && npm run build
+# env:
+#   GOOGLE_SERVICE_ACCOUNT=/path/creds.json
+#   GEMINI_API_KEY=...
+npm run start -- -p 3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Opsional: systemd unit agar jalan terus:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```ini
+# /etc/systemd/system/materi.service
+[Unit]
+Description=Materi Sekolah Agent
+After=network.target
+[Service]
+WorkingDirectory=/opt/materi/web
+ExecStart=/usr/bin/npm run start -- -p 3000
+EnvironmentFile=/opt/materi/web/.env
+Restart=always
+[Install]
+WantedBy=multi-user.target
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now materi
+```
 
-## Learn More
+Akses: `http://<server-ip>:3000`
 
-To learn more about Next.js, take a look at the following resources:
+## Catatan
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- SQLite chat history tersimpan di `web/data/app.db` (backup otomatis jika folder disync).
+- `better-sqlite3` butuh build tools (`build-essential`) di Ubuntu — sudah termasuk di atas.
+- Materi >50MB ditolak; materi panjang di-chunk ke Gemini (50k chars per call).
