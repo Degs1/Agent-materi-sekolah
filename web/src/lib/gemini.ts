@@ -1,8 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-export const MODEL = 'gemini-2.5-flash';
-
+export const MODEL = 'gemini-3.6-flash';
 const SYSTEM = `Kamu adalah asisten belajar (agent materi sekolah). Jawab berdasarkan materi yang diberikan.
 Jika materi tidak cukup menjawab pertanyaan, gunakan pencarian web (grounding) untuk melengkapi.
 Tandai sumber: "[Dari materi]" untuk isi dari materi pengguna, "[Dari web]" untuk tambahan dari internet.
@@ -11,29 +10,65 @@ Gunakan bahasa Indonesia yang jelas dan ringkas.`;
 /** Streaming chat; callback per chunk teks. Return teks lengkap. */
 export async function chatStream(
   materiText: string,
-  history: { role: string; content: string }[],
+  history: { role: string; content: string; parts?: any[] }[],
   prompt: string,
-  onChunk: (t: string) => void
+  onChunk: (t: string) => void,
+  signal?: AbortSignal,
+  inlineAttachments?: any[]
 ): Promise<string> {
-  const contents = [
-    ...history.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    { role: 'user', parts: [{ text: prompt }] },
-  ];
+  const contents = history.map((m) => ({ 
+    role: m.role === 'assistant' ? 'model' : 'user', 
+    parts: m.parts ? m.parts : [{ text: m.content }] 
+  }));
+  
+  const userParts: any[] = [{ text: prompt }];
+  if (inlineAttachments && inlineAttachments.length > 0) {
+    userParts.push(...inlineAttachments);
+  }
+  
+  contents.push({ role: 'user', parts: userParts });
+
   const res = await ai.models.generateContentStream({
     model: MODEL,
     contents,
     config: {
       systemInstruction: SYSTEM + '\n\n=== MATERI ===\n' + materiText,
-      tools: [{ googleSearch: {} }], // grounding: cari web bila materi kurang
     },
   });
+  
   let full = '';
   for await (const chunk of res) {
+    if (signal?.aborted) {
+      const e = new Error('AbortError');
+      e.name = 'AbortError';
+      throw e;
+    }
     const t = chunk.text ?? '';
     full += t;
     onChunk(t);
   }
   return full;
+}
+
+export async function countSessionTokens(materiText: string, history: any[], prompt: string): Promise<number> {
+  const combinedSystemText = SYSTEM + '\n\n=== MATERI ===\n' + materiText;
+  
+  const contents = [
+    { role: 'user', parts: [{ text: combinedSystemText }] }, // Inject system instruction as first user message for token counting
+    ...history.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    { role: 'user', parts: [{ text: prompt }] },
+  ];
+  
+  try {
+    const res = await ai.models.countTokens({
+      model: MODEL,
+      contents
+    });
+    return res.totalTokens ?? 0;
+  } catch (e) {
+    console.error('countTokens error:', e);
+    return 0;
+  }
 }
 
 /** Rangkum materi → markdown ringkas. */
@@ -66,12 +101,32 @@ export async function extractText(filePath: string, mime: string): Promise<strin
   return res.text ?? '';
 }
 
-/** Transkrip YouTube via Gemini (URL → ringkasan poin materi). */
+import { YoutubeTranscript } from 'youtube-transcript';
+
+/** Transkrip YouTube via youtube-transcript & Gemini (URL → ringkasan poin materi). */
 export async function youtubeTranscript(url: string): Promise<string> {
-  const res = await ai.models.generateContent({
-    model: MODEL,
-    contents: [{ role: 'user', parts: [{ text: `Ambil transkrip/ringkasan isi video YouTube ini (bisa pakai pencarian web): ${url}. Output: ringkasan poin-poin materi, bahasa Indonesia.` }] }],
-    config: { tools: [{ googleSearch: {} }] },
-  });
-  return res.text ?? '';
+  try {
+    const transcript = await YoutubeTranscript.fetchTranscript(url);
+    const fullText = transcript.map(t => t.text).join(' ');
+    
+    // Optionally summarize with Gemini if it's too long, or just return the text
+    if (fullText.length > 5000) {
+      const res = await ai.models.generateContent({
+        model: MODEL,
+        contents: [{ role: 'user', parts: [{ text: `Buatkan ringkasan lengkap dari transkrip video YouTube berikut:\n\n${fullText.slice(0, 50000)}` }] }],
+      });
+      return `[Transkrip YouTube]:\n${res.text ?? fullText.slice(0, 5000)}...`;
+    }
+    
+    return `[Transkrip YouTube]:\n${fullText}`;
+  } catch (e: any) {
+    console.error('youtube transcript error:', e);
+    
+    // Fallback to old behavior if scraping fails (e.g. no captions)
+    const res = await ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: 'user', parts: [{ text: `Ambil transkrip/ringkasan isi video YouTube ini (bisa pakai pencarian web): ${url}. Output: ringkasan poin-poin materi, bahasa Indonesia.` }] }],
+    });
+    return res.text ?? '';
+  }
 }

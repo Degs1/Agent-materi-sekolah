@@ -13,6 +13,12 @@ export function getDb(): Db {
   return db;
 }
 
+/** 
+ * Map untuk menyimpan state dari proses Gemini yang sedang berjalan di background.
+ * Menyimpan sessionId -> { text: teks_yang_sedang_digenerate, abort: controller_untuk_stop }
+ */
+export const activeGenerations = new Map<number, { text: string; abort: AbortController }>();
+
 /** Ekstrak teks dari file lokal: pdf/gambar via Gemini; teks baca langsung. */
 export async function extractFileText(filePath: string, mime: string): Promise<string> {
   if (mime === 'text/plain' || mime === 'text/markdown') {

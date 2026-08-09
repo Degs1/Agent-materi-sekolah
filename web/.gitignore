@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# service account credentials
+materi-sekolah-agent-*.json
+*.service-account.json
+
+# local data (sqlite)
+data/
