@@ -26,7 +26,7 @@ Sebelum memulai, pastikan kamu telah menginstal:
 
 1. **Clone Repositori**
    ```bash
-   git clone https://github.com/USERNAME/agent-materi-sekolah.git
+   git clone https://github.com/Degs1/Agent-materi-sekolah.git
    cd agent-materi-sekolah/web
    ```
 
