@@ -85,19 +85,21 @@ Gemini API: ekstraksi, rangkuman, quiz, chat agent
 - Ekstraksi: PDF → teks, gambar → OCR, YouTube → transkrip (pakai kemampuan Gemini multimodal + YouTube).
 - Rangkuman & quiz generation.
 - Chat agent (web + Hermes). API key disimpan di env var.
+- **Grounding (Google Search via Gemini)**: saat chat, jika materi di Drive kurang / tidak jelas menjawab pertanyaan, agent otomatis cari di web (Gemini grounding) → jawaban gabungan. Sumber ditandai: "dari materi Drive" vs "tambahan dari web". Grounding dipakai di web app dan Hermes skill (satu mekanisme, tanpa API key tambahan).
 
 ## 5. Data Flow
 
 1. **Upload**: web → `POST /api/upload` → simpan ke Drive `MateriSekolah/<Mapel>/<Bab>/` → update `meta.json`.
 2. **Browse**: web → `GET /api/materi` → list struktur Drive.
-3. **Chat (web)**: user ketik → `POST /api/chat` → server ambil materi relevan dari Drive → Gemini generate jawaban → streaming SSE ke client → simpan ke SQLite.
-4. **Chat (Hermes)**: command → `gws` download materi → Gemini generate → jawab di Hermes.
+4. **Chat (web)**: user ketik → `POST /api/chat` → server ambil materi relevan dari Drive → Gemini generate jawaban (grounding: cari web otomatis jika materi Drive kurang, sumber ditandai) → streaming SSE ke client → simpan ke SQLite.
+5. **Chat (Hermes)**: command → `gws` download materi → Gemini generate (grounding sama) → jawab di Hermes.
 
 ## 6. Error Handling
 
 - **Drive API gagal / rate limit** → retry backoff (max 3x), pesan jelas di UI, upload resumable (tidak ada data hilang).
 - **File rusak / format tidak didukung** → validasi ekstensi + ukuran (max 50MB), tolak dengan alasan spesifik.
 - **Gemini error / timeout** → tampil error + tombol retry; quota habis → pesan "quota habis, coba lagi nanti" (deteksi dari kode error 429/ResourceExhausted).
+- **Grounding / web search gagal** → jawaban tetap dari materi Drive saja (fallback), tanpa error; sumber "dari web" tidak ditampilkan.
 - **Koneksi putus saat streaming** → client reconnect, history aman di SQLite.
 - **File Drive dihapus/dipindah manual** → refresh struktur; meta.json nyangkut diabaikan (tidak crash).
 
